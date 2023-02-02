@@ -1,5 +1,7 @@
-use clap::{App,Arg};
+use clap::{App, Arg};
 use std::error::Error;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -17,60 +19,89 @@ pub fn get_args() -> MyResult<Config> {
         .about("Rust head")
         .arg(
             Arg::with_name("lines")
-            .short("n")
-            .long("lines")
-            .value_name("LINES")
-            .help("Number of lines")
-            .default_value("10")
-            .takes_value(true)
+                .short("n")
+                .long("lines")
+                .value_name("LINES")
+                .help("Number of lines")
+                .default_value("10")
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("bytes")
-            .short("c")
-            .long("bytes")
-            .value_name("BYTES")
-            .conflicts_with("lines")
-            .help("Number of bytes")
-            .takes_value(true)
-            .required(false)
+                .short("c")
+                .long("bytes")
+                .value_name("BYTES")
+                .conflicts_with("lines")
+                .help("Number of bytes")
+                .takes_value(true)
+                .required(false),
         )
         .arg(
             Arg::with_name("FILE")
-            .help("Input file(s)")
-            .default_value("-")
-            .takes_value(true)
-            .multiple(true)
+                .help("Input file(s)")
+                .default_value("-")
+                .takes_value(true)
+                .multiple(true),
         )
         .get_matches();
-    
+
     let lines = matches
-                .value_of("lines")
-                .map(parse_positive_int)
-                .transpose()
-                .map_err(|e| format!("illegal line count -- {}", e))?;
-    
+        .value_of("lines")
+        .map(parse_positive_int)
+        .transpose()
+        .map_err(|e| format!("illegal line count -- {}", e))?;
+
     let bytes = matches
-                .value_of("bytes")
-                .map(parse_positive_int)
-                .transpose()
-                .map_err(|e|format!("illegal byte count -- {}", e))?;
+        .value_of("bytes")
+        .map(parse_positive_int)
+        .transpose()
+        .map_err(|e| format!("illegal byte count -- {}", e))?;
 
-    Ok( Config {
-            files: matches.values_of_lossy("FILE").unwrap(),
-            lines: lines.unwrap(),
-            bytes: bytes,
-        })
-
+    Ok(Config {
+        files: matches.values_of_lossy("FILE").unwrap(),
+        lines: lines.unwrap(),
+        bytes,
+    })
 }
 
-pub fn run(config: Config) -> MyResult<()>{
-    println!("{:?}", config);
+pub fn run(config: Config) -> MyResult<()> {
+    let len_files = config.files.len();
+    let fn_flag = config.files.len() > 1;
+    let mut idx = 0;
+    for filename in config.files {
+        if fn_flag {
+            println!("==> {} <==", filename);
+        }
+        match open(&filename) {
+            Err(err) => eprintln!("{}: {}", filename, err),
+            Ok(_bufreader) if config.bytes.is_some() => {
+                unimplemented!();
+            }
+            Ok(bufreader) => {
+                for line in bufreader.lines().take(config.lines) {
+                    println!("{}", line?);
+                }
+            }
+        }
+        idx+=1;
+        if fn_flag && idx != len_files {
+            print!("\n");
+        }
+    }
+
     Ok(())
 }
 
-fn parse_positive_int(val :&str) -> MyResult<usize> {
+pub fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+fn parse_positive_int(val: &str) -> MyResult<usize> {
     match val.parse() {
-        Ok(n) if n>0  => Ok(n),
+        Ok(n) if n > 0 => Ok(n),
         _ => Err(From::from(val)),
     }
 }
